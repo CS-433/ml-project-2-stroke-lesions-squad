@@ -39,67 +39,62 @@ def conv_layer(input_channels, output_channels):     #This is a helper function 
     return conv
 
 class UNet(nn.Module):
-    def __init__(self):
+    def __init__(
+            self, in_channels=3, out_channels=1, features=[64, 128, 256, 512],):
         super(UNet, self).__init__()
-        
+
+        self.ups = nn.ModuleList()
+        self.downs = nn.ModuleList()
+
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.down_1 = conv_layer(3, 64)
-        self.down_2 = conv_layer(64, 128)
-        self.down_3 = conv_layer(128, 256)
-        self.down_4 = conv_layer(256, 512)
-        self.down_5 = conv_layer(512, 1024)
-        
-        self.up_1 = nn.ConvTranspose2d(in_channels=1024, out_channels=512, kernel_size=2, stride=2)
-        self.up_conv_1 = conv_layer(1024, 512)
-        self.up_2 = nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=2, stride=2)
-        self.up_conv_2 = conv_layer(512, 256)
-        self.up_3 = nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
-        self.up_conv_3 = conv_layer(256, 128)
-        self.up_4 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=2)
-        self.up_conv_4 = conv_layer(128, 64)
-        
-        self.output = nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, padding=0)
+
+        #Down part of the UNet
+        for feature in features:
+            self.downs.append(conv_layer(in_channels, feature))
+            in_channels = feature
+
+        #Up part of the UNet
+        for feature in reversed(features):
+            self.ups.append(
+                nn.ConvTranspose2d(
+                    feature*2, feature, kernel_size=2, stride=2,
+                )
+            )
+            self.ups.append(conv_layer(feature*2, feature))
+
+        self.bottleneck = conv_layer(features[-1], features[-1]*2)
+
+        self.output = nn.Conv2d(features[0], out_channels, kernel_size=1)
         self.output_activation = nn.Sigmoid()
                 
     def forward(self, img):     #The print statements can be used to visualize the input and output sizes for debugging
-        x1 = self.down_1(img)
-        #print(x1.size())
-        x2 = self.max_pool(x1)
-        #print(x2.size())
-        x3 = self.down_2(x2)
-        #print(x3.size())
-        x4 = self.max_pool(x3)
-        #print(x4.size())
-        x5 = self.down_3(x4)
-        #print(x5.size())
-        x6 = self.max_pool(x5)
-        #print(x6.size())
-        x7 = self.down_4(x6)
-        #print(x7.size())
-        x8 = self.max_pool(x7)
-        #print(x8.size())
-        x9 = self.down_5(x8)
-        #print(x9.size())
-        
-        x = self.up_1(x9)
-        #print(x.size())
-        x = self.up_conv_1(torch.cat([x, x7], 1))
-        #print(x.size())
-        x = self.up_2(x)
-        #print(x.size())
-        x = self.up_conv_2(torch.cat([x, x5], 1))
-        #print(x.size())
-        x = self.up_3(x)
-        #print(x.size())
-        x = self.up_conv_3(torch.cat([x, x3], 1))
-        #print(x.size())
-        x = self.up_4(x)
-        #print(x.size())
-        x = self.up_conv_4(torch.cat([x, x1], 1))
-        #print(x.size())
-        
-        x = self.output(x)
+        # Connection is the list of outputs from the downsampling path.
+        # We save it to keep local information. So where is the information
+        connections = []
+        #path down the UNet, finds important informations
+        for down in self.downs:
+            img = down(img)
+            connections.append(img)
+
+            img = self.max_pool(img)
+
+        #link from downsampling to upsampling
+        img = self.bottleneck(img)
+
+        #reverse the connections list to go up the UNet
+        connections = connections[::-1]
+        for idx in range(0, len(self.ups), 2):
+            #ConvTranspose2d is the upsampling layer
+            img = self.ups[idx](img)
+            #concatenates the output from the upsampling layer with the output from the downsampling layer
+            connection = connections[idx//2]
+            if(img.shape != connection.shape):
+                connection = TF.resize(connection, size=img.shape[2:])
+            img = torch.cat((img, connection), dim=1)
+            #convolutional layer
+            img = self.ups[idx+1](img)
+
+        x = self.output(img)
         x = self.output_activation(x)
-        #print(x.size())
         
         return x
