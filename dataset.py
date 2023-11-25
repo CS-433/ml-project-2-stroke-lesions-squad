@@ -16,10 +16,10 @@ class MRIImages(Dataset):
         return len(self.images)
 
     def __getitem__(self, index):
-        dwi_path = os.path.join(self.image_paths, self.images[3 * index])
-        adc_path = os.path.join(self.image_paths, self.images[3 * index + 1])
-        flair_path = os.path.join(self.image_paths, self.images[3 * index + 1])
-        target_path = os.path.join(self.target_paths, self.targets[index])
+        dwi_path = self.images[3 * index]
+        adc_path = self.images[3 * index + 1]
+        flair_path = self.image_paths, self.images[3 * index + 1]
+        target_path = self.targets[index]
 
         dwi_image = nib.load(dwi_path).get_fdata()
         adc_image = nib.load(adc_path).get_fdata()
@@ -32,5 +32,5 @@ class MRIImages(Dataset):
         if self.transform:
             image = self.transform(image)
             mask = self.transform(mask)
-            
+
         return image, mask
