@@ -1,12 +1,13 @@
+import os
+
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+import nibabel as nib
+import torchio as tio
 from sklearn.model_selection import train_test_split
-
-from utils import get_loaders
+from utils import get_loaders, check_accuracy
 
 from tqdm import tqdm
 
@@ -15,14 +16,15 @@ import Model
 LEARNING_RATE = 1e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 16
-EPOCHS = 3
+EPOCHS = 4
 NUM_WORKERS = 2
-IMAGE_HEIGHT = 16
-IMAGE_WIDTH = 240
+IMAGE_HEIGHT = 64
+IMAGE_WIDTH = 64
+IMAGE_DEPTH = 64
 PIN_MEMORY = True
 LOAD_MODEL = False
-TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET/magesTr"
-TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET/labelsTr"
+TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug/imagesTr"
+TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET_Debug/labelsTr"
 
 
 def dc_loss(pred, target):
@@ -61,27 +63,40 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
 
 
 def main():
-    train_transform = A.compose([
-        A.resize(height=IMAGE_HEIGHT, width=IMAGE_WIDTH),
-        A.Rotate(limit=35, p=1.0),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.1),
-
-        A.Normalize(mean=[0.0, 0.0, 0.0], std=[1.0, 1.0, 1.0], max_pixel_value=255.0),
-        ToTensorV2(),
+    # define transforms to augment the data
+    patch_size = (IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_DEPTH)
+    train_transform = tio.Compose([
+        #Random rotation of 10 degrees
+        tio.RandomAffine(scales=1, degrees=[-10, 10, -10, 10, -10, 10], isotropic=True, image_interpolation='nearest'),
+        tio.Resize(patch_size),
+        tio.RandomFlip(0, p=0.5),
+        tio.RandomFlip(1, p=0.5),
+        tio.RandomFlip(2, p=0.5),
+        tio.ZNormalization()
     ])
 
+    # define model, optimizer, loss function
     model = Model.UNet().to(DEVICE)
-    optimizer = optim.Adam(model.param
-eters(), lr=LEARNING_RATE)
-    loss_fn = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    loss_fn = nn.BCEWithLogitsLoss()
     loss_fn_dice = dc_loss
-    df = pd.DataFrame(data={"filename": TRAIN_IMG_DIR, 'mask': TRAIN_MASK_DIR})
+
+    train_files = []
+    mask_files = []
+    for i, filename in enumerate(sorted(os.listdir(TRAIN_IMG_DIR))):
+        if i % 3 == 0:
+            train_files.append([os.path.join(TRAIN_IMG_DIR, filename)])
+        else:
+            train_files[-1].append(os.path.join(TRAIN_IMG_DIR, filename))
+    for filename in sorted(os.listdir(TRAIN_MASK_DIR)):
+        mask_files.append(os.path.join(TRAIN_MASK_DIR, filename))
+
+    df = pd.DataFrame(data={"filename": train_files, 'mask': mask_files})
     df_train, df_test = train_test_split(df, test_size=0.2)
     df_train, df_val = train_test_split(df_train, test_size=0.2)
 
 
-    train_loader = get_loaders(
+    train_loader, val_loader = get_loaders(
             df_train["filename"],
             df_train["mask"],
             df_val["filename"],
@@ -89,13 +104,15 @@ eters(), lr=LEARNING_RATE)
             BATCH_SIZE,
             NUM_WORKERS,
             PIN_MEMORY,
-            train_transform)
+            train_transform
+            )
 
     scaler = torch.cuda.amp.GradScaler()
     for epoch in range(EPOCHS):
         train_fn(train_loader, model, optimizer, loss_fn, scaler)
         #save model
         #check accuracy
+        acc = check_accuracy(val_loader, model, device=DEVICE)
         #print examples to a folder
 
 if __name__ == "__main__":

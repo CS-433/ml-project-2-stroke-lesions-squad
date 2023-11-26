@@ -48,3 +48,5 @@ def check_accuracy(loader, model, device="cuda"):
             num_pixel += torch.numel(predictions)
 
     print(f"Got {num_correct}/{num_pixel} with accuracy {float(num_correct)/float(num_pixel)*100:.2f}")
+    model.train()
+    return float(num_correct)/float(num_pixel)*100
