@@ -8,19 +8,21 @@ import nibabel as nib
 import torchio as tio
 from sklearn.model_selection import train_test_split
 from utils import get_loaders, check_accuracy
+import cProfile
+import pstats
 
 from tqdm import tqdm
 
 import Model
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 16
-EPOCHS = 4
+BATCH_SIZE = 2
+EPOCHS = 10
 NUM_WORKERS = 2
-IMAGE_HEIGHT = 64
-IMAGE_WIDTH = 64
-IMAGE_DEPTH = 64
+IMAGE_HEIGHT = 80
+IMAGE_WIDTH = 80
+IMAGE_DEPTH = 16
 PIN_MEMORY = True
 LOAD_MODEL = False
 TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug/imagesTr"
@@ -42,7 +44,6 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
     avg_val_losses = []
 
     loop = tqdm(loader)
-
     for batch_idx, (data, targets) in enumerate(loop):
         data = data.to(device=DEVICE)
         targets = targets.float().unsqueeze(1).to(device=DEVICE)
@@ -59,12 +60,12 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
         scaler.update()
 
         # update tqdm loop
-        loop.set_postfix(loss=loss.item())
+        loop.set_postfix(loss=loss.backward().item())
 
 
 def main():
     # define transforms to augment the data
-    patch_size = (IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_DEPTH)
+    patch_size = (IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
     train_transform = tio.Compose([
         #Random rotation of 10 degrees
         tio.RandomAffine(scales=1, degrees=[-10, 10, -10, 10, -10, 10], isotropic=True, image_interpolation='nearest'),
@@ -72,6 +73,10 @@ def main():
         tio.RandomFlip(0, p=0.5),
         tio.RandomFlip(1, p=0.5),
         tio.RandomFlip(2, p=0.5),
+        tio.ZNormalization()
+    ])
+    val_transform = tio.Compose([
+        tio.Resize(patch_size),
         tio.ZNormalization()
     ])
 
@@ -104,7 +109,8 @@ def main():
             BATCH_SIZE,
             NUM_WORKERS,
             PIN_MEMORY,
-            train_transform
+            train_transform,
+            val_transform
             )
 
     scaler = torch.cuda.amp.GradScaler()
