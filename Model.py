@@ -43,7 +43,7 @@ class UNet(nn.Module):
         super(UNet, self).__init__()
         
         self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.down_1 = conv_layer(3, 64)
+        self.down_1 = conv_layer(1, 64)
         self.down_2 = conv_layer(64, 128)
         self.down_3 = conv_layer(128, 256)
         self.down_4 = conv_layer(256, 512)
