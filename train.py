@@ -24,15 +24,16 @@ NUM_EPOCHS = 30
 NUM_WORKERS = 8
 IMAGE_HEIGHT = 80
 IMAGE_WIDTH = 80
-IMAGE_DEPTH = 16
+IMAGE_DEPTH = 32
 PIN_MEMORY = True
 LOAD_MODEL = False
-TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug/imagesTr"
-TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET_Debug/labelsTr"
+TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET/imagesTr"
+TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET/labelsTr"
 
 def train_fn(loader, model, optimizer, loss_fn, scaler):
     loop = tqdm(loader)
     batch_idx = 0
+    avg_loss = 0
     for data, targets in loop:
         data = data.to(device=DEVICE)
         targets = targets.float().unsqueeze(1).to(device=DEVICE)
@@ -50,7 +51,9 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
 
         # update tqdm loop
         loop.set_postfix(loss=loss.item())
+        avg_loss += loss.item()
         batch_idx += 1
+
 
 
 def main():
@@ -102,11 +105,11 @@ def main():
 
     scaler = torch.cuda.amp.GradScaler()
 
+
     for epoch in range(NUM_EPOCHS):
         train_fn(train_loader, model, optimizer, loss_fn, scaler)
-
-        """ # save model
-        checkpoint = {
+        #save model
+        """checkpoint = {
             "state_dict": model.state_dict(),
             "optimizer":optimizer.state_dict(),
         }
@@ -118,7 +121,7 @@ def main():
         # print some examples to a folder
         """if(epoch%3 == 0):
             save_predictions_as_imgs(
-                val_loader, model, folder="saved_images/", device=DEVICE
+            val_loader, model, folder="saved_images/", device=DEVICE
             )"""
 
 
