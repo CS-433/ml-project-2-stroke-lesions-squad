@@ -1,25 +1,27 @@
 import os
 
-import pandas as pd
+import torchio as tio
 import torch
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
-import nibabel as nib
-import torchio as tio
-from sklearn.model_selection import train_test_split
-from utils import get_loaders, check_accuracy
-import cProfile
-import pstats
+import pandas as pd
+from Model import UNET
+from utils import (
+    load_checkpoint,
+    save_checkpoint,
+    get_loaders,
+    check_accuracy,
+    save_predictions_as_imgs,
+)
 
-from tqdm import tqdm
-
-import Model
-
-LEARNING_RATE = 1e-3
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 2
-EPOCHS = 10
-NUM_WORKERS = 2
+# Hyperparameters etc.
+LEARNING_RATE = 1e-4
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+BATCH_SIZE = 5
+NUM_EPOCHS = 30
+NUM_WORKERS = 8
 IMAGE_HEIGHT = 80
 IMAGE_WIDTH = 80
 IMAGE_DEPTH = 16
@@ -28,23 +30,10 @@ LOAD_MODEL = False
 TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug/imagesTr"
 TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET_Debug/labelsTr"
 
-
-def dc_loss(pred, target):
-    smooth = 100
-
-    predf = pred.view(-1)
-    targetf = target.view(-1)
-    intersection = (predf * targetf).sum()
-
-    return 1 - ((2. * intersection + smooth) /
-                (predf.sum() + targetf.sum() + smooth))
-
 def train_fn(loader, model, optimizer, loss_fn, scaler):
-    avg_train_losses = []
-    avg_val_losses = []
-
     loop = tqdm(loader)
-    for batch_idx, (data, targets) in enumerate(loop):
+    batch_idx = 0
+    for data, targets in loop:
         data = data.to(device=DEVICE)
         targets = targets.float().unsqueeze(1).to(device=DEVICE)
 
@@ -60,7 +49,8 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
         scaler.update()
 
         # update tqdm loop
-        loop.set_postfix(loss=loss.backward().item())
+        loop.set_postfix(loss=loss.item())
+        batch_idx += 1
 
 
 def main():
@@ -73,18 +63,15 @@ def main():
         tio.RandomFlip(0, p=0.5),
         tio.RandomFlip(1, p=0.5),
         tio.RandomFlip(2, p=0.5),
-        tio.ZNormalization()
+        #Normalization occurs later
     ])
     val_transform = tio.Compose([
         tio.Resize(patch_size),
-        tio.ZNormalization()
     ])
 
-    # define model, optimizer, loss function
-    model = Model.UNet().to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    model = UNET(in_channels=3, out_channels=1).to(DEVICE)
     loss_fn = nn.BCEWithLogitsLoss()
-    loss_fn_dice = dc_loss
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     train_files = []
     mask_files = []
@@ -107,19 +94,33 @@ def main():
             df_val["filename"],
             df_val["mask"],
             BATCH_SIZE,
+            train_transform,
+            val_transform,
             NUM_WORKERS,
             PIN_MEMORY,
-            train_transform,
-            val_transform
             )
 
     scaler = torch.cuda.amp.GradScaler()
-    for epoch in range(EPOCHS):
+
+    for epoch in range(NUM_EPOCHS):
         train_fn(train_loader, model, optimizer, loss_fn, scaler)
-        #save model
-        #check accuracy
-        acc = check_accuracy(val_loader, model, device=DEVICE)
-        #print examples to a folder
+
+        """ # save model
+        checkpoint = {
+            "state_dict": model.state_dict(),
+            "optimizer":optimizer.state_dict(),
+        }
+        save_checkpoint(checkpoint)"""
+
+        # check accuracy
+        check_accuracy(val_loader, model, device=DEVICE)
+
+        # print some examples to a folder
+        """if(epoch%3 == 0):
+            save_predictions_as_imgs(
+                val_loader, model, folder="saved_images/", device=DEVICE
+            )"""
+
 
 if __name__ == "__main__":
     main()
