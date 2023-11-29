@@ -54,6 +54,16 @@ def get_loaders(
 
     return train_loader, val_loader
 
+
+def bayesian(preds, y):
+    tp = torch.logical_and(preds == 1, y == 1).sum().item()
+    tn = torch.logical_and(preds == 0, y == 0).sum().item()
+    fp = torch.logical_and(preds == 1, y == 0).sum().item()
+    fn = torch.logical_and(preds == 0, y == 1).sum().item()
+
+    return tp, tn, fp, fn
+
+
 def check_accuracy(loader, model, device="cuda"):
     num_correct = 0
     num_pixels = 0
@@ -61,23 +71,28 @@ def check_accuracy(loader, model, device="cuda"):
     model.eval()
 
     with torch.no_grad():
+        tp, tn, fp, fn = 0, 0, 0, 0
         for x, y in loader:
             x = x.to(device)
             y = y.to(device).unsqueeze(1)
+            binary_y = (y > 0.5)
             preds = torch.sigmoid(model(x))
             preds = (preds > 0.5).float()
-            num_correct += (preds == y).sum()
+            num_correct += (preds == binary_y).sum()
             num_pixels += torch.numel(preds)
 
-            dice_score += (2 * (preds * y).sum()) / (
-                (preds + y).sum() + 1e-8
-            )
+            f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
+            tp += f_tp
+            tn += f_tn
+            fp += f_fp
+            fn += f_fn
 
 
     print(
         f"Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}"
     )
-    print(f"Dice score: {dice_score/len(loader)}")
+    print(f"True Positive: {tp}, True Negative: {tn}, False Positive: {fp}, False Negative: {fn}")
+    print(f"f1 score: {2*tp/(2*tp+fp+fn)}")
     model.train()
 
 def save_predictions_as_imgs(
