@@ -1,4 +1,6 @@
 import os
+
+import torch
 from PIL import Image
 from torch.utils.data import Dataset
 import numpy as np
@@ -30,6 +32,7 @@ class MRIImage(Dataset):
         if self.transform is not None:
             original_images = self.transform(original_images)
             original_images[0:3] = tio.ZNormalization()(original_images[0:3])
-        mask = (original_images[3] > 0.5).astype(np.float32)
 
-        return original_images[0:3].astype(np.float32), mask
+        mask = np.array([original_images[3] > 0.5]).astype(np.float32)
+
+        return original_images[0:3], mask

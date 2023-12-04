@@ -2,6 +2,8 @@ import torch
 import torchvision
 from dataset import MRIImage
 from torch.utils.data import DataLoader
+CROP = [2,2,2]
+
 
 def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
@@ -19,6 +21,7 @@ def get_loaders(
     batch_size,
     train_transform,
     val_transform,
+    split_img_dim,
     num_workers=4,
     pin_memory=True,
 ):
@@ -55,6 +58,14 @@ def get_loaders(
     return train_loader, val_loader
 
 
+def crop_image(image, mask):
+    shape = image.size()
+    cropped_shape = (shape[2] // CROP[0], shape[3] // CROP[1], shape[4] // CROP[2])
+
+    crop = image.unfold(2, cropped_shape[0], cropped_shape[0]).unfold(3, cropped_shape[1],cropped_shape[1]).unfold(4,cropped_shape[2],cropped_shape[2])
+    mask = mask.unfold(2, cropped_shape[0], cropped_shape[0]).unfold(3, cropped_shape[1], cropped_shape[1]).unfold(4,cropped_shape[2],cropped_shape[2])
+    return crop, mask
+
 def bayesian(preds, y):
     tp = torch.logical_and(preds == 1, y == 1).sum().item()
     tn = torch.logical_and(preds == 0, y == 0).sum().item()
@@ -74,18 +85,25 @@ def check_accuracy(loader, model, device="cuda"):
         tp, tn, fp, fn = 0, 0, 0, 0
         for x, y in loader:
             x = x.to(device)
-            y = y.to(device).unsqueeze(1)
-            binary_y = (y > 0.5)
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
-            num_correct += (preds == binary_y).sum()
-            num_pixels += torch.numel(preds)
+            y = y.to(device)
+            crop_img, crop_target = crop_image(x, y)
+            for i in range(CROP[0]):
+                for j in range(CROP[1]):
+                    for k in range(CROP[2]):
+                        x = crop_img[:,:, i,j,k,:,:,:]
+                        y = crop_target[:, :, i,j,k,:,:,:]
+                        binary_y = (y > 0.5).long()
+                        with torch.no_grad():
+                            preds = torch.sigmoid(model(x.float()))
+                            preds = (preds > 0.5).long()
+                        num_correct += (preds == binary_y).sum()
+                        num_pixels += torch.numel(preds)
 
-            f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
-            tp += f_tp
-            tn += f_tn
-            fp += f_fp
-            fn += f_fn
+                        f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
+                        tp += f_tp
+                        tn += f_tn
+                        fp += f_fp
+                        fn += f_fn
 
 
     print(
@@ -102,15 +120,25 @@ def save_predictions_as_imgs(
     idx = 0
     for x, y in loader:
         x = x.to(device=device)
-        with torch.no_grad():
-            preds = torch.sigmoid(model(x))
-            preds = (preds > 0.5).float()
+        y = y.to(device=device)
+        crop_img, crop_target = crop_image(x, y)
+        for i in range(CROP[0]):
+            for j in range(CROP[1]):
+                for k in range(CROP[2]):
+                    x = crop_img[:, :, i, j, k, :, :, :]
+                    y = crop_target[:, :, i, j, k, :, :, :]
 
-        for slice in range(0, x.shape[2], 8):
-            torchvision.utils.save_image(
-                preds[idx, 0, slice], f"{folder}/pred_{idx}_slice{slice}.png"
-            )
-            torchvision.utils.save_image(y[idx, slice], f"{folder}/y_{idx}_slice{slice}.png")
-        idx += 1
+                    with torch.no_grad():
+                        preds = torch.sigmoid(model(x.float()))
+                        preds = (preds > 0.5).float()
+
+                    for slice in range(0, x.shape[2], 32):
+                        pred_image = preds[idx, 0, slice]
+                        y_image = y[idx, 0, slice]
+                        torchvision.utils.save_image(
+                            pred_image, f"{folder}/pred_{idx}_slice{slice}.png"
+                        )
+                        torchvision.utils.save_image(y_image, f"{folder}/y_{idx}_slice{slice}.png")
+        idx += 4
 
     model.train()
