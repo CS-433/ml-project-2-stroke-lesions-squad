@@ -117,8 +117,7 @@ def save_predictions_as_imgs(
     loader, model, folder="saved_images/", device="cuda"
 ):
     model.eval()
-    idx = 0
-    for x, y in loader:
+    for idx, (x, y) in enumerate(loader):
         x = x.to(device=device)
         y = y.to(device=device)
         crop_img, crop_target = crop_image(x, y)
@@ -139,6 +138,5 @@ def save_predictions_as_imgs(
                             pred_image, f"{folder}/pred_{idx}_slice{slice}.png"
                         )
                         torchvision.utils.save_image(y_image, f"{folder}/y_{idx}_slice{slice}.png")
-        idx += 4
 
     model.train()

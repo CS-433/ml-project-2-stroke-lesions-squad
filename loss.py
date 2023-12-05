@@ -12,7 +12,7 @@ class Dice(nn.Module):
         self.thresh = thresh
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor,
-                weights: Optional[torch.Tensor] = None, smooth: float = 0):
+                weights: Optional[torch.Tensor] = None, smooth: float = 0.01):
         # Binarize prediction
         inputs = torch.where(inputs < self.thresh, 0, 1)
         batch_size = targets.shape[0]

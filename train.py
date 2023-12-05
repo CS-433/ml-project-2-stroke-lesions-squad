@@ -38,8 +38,9 @@ TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET_Debug/labelsTr"
 def train_fn(loader, model, optimizer, loss_fn, scaler):
     loop = tqdm(loader)
     batch_idx = 0
-    avg_loss = 0
     for data, targets in loop:
+        total_loss = 0.0
+        number_iter = 0
         crop_data, crop_targets = crop_image(data, targets)
         for i in range(CROP[0]):
             for j in range(CROP[1]):
@@ -61,9 +62,11 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
                     scaler.update()
 
                     # update tqdm loop
-                    loop.set_postfix(loss=loss.item())
-                    avg_loss += loss.item()
-                    batch_idx += 1
+                    number_iter += 1
+                    total_loss += loss.item() if type(loss.item()) == float else 1.0
+                    avg_loss = total_loss/number_iter
+                    loop.set_postfix(loss=avg_loss)
+    batch_idx += 1
 
 
 
@@ -98,8 +101,8 @@ def main():
         mask_files.append(os.path.join(TRAIN_MASK_DIR, filename))
 
     df = pd.DataFrame(data={"filename": train_files, 'mask': mask_files})
-    df_train, df_test = train_test_split(df, test_size=0.2)
-    df_train, df_val = train_test_split(df_train, test_size=0.2)
+    df_train, df_test = train_test_split(df, test_size=0.4)
+    df_train, df_val = train_test_split(df_train, test_size=0.4)
 
     train_loader, val_loader = get_loaders(
             df_train["filename"],

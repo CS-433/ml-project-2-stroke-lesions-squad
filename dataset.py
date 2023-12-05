@@ -31,7 +31,7 @@ class MRIImage(Dataset):
         original_images[3] = nib.load(target_path).get_fdata()
         if self.transform is not None:
             original_images = self.transform(original_images)
-            original_images[0:3] = tio.ZNormalization()(original_images[0:3])
+            original_images[0:3] = tio.ZNormalization(masking_method=tio.ZNormalization.mean)(original_images[0:3])
 
         mask = np.array([original_images[3] > 0.5]).astype(np.float32)
 
