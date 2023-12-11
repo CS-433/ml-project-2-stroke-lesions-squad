@@ -14,10 +14,10 @@ class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv3d(in_channels, out_channels, 3, 1, 1, bias=False),
+            nn.Conv3d(in_channels, out_channels, 3, 1, 1, bias=True),
             nn.BatchNorm3d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Conv3d(out_channels, out_channels, 3, 1, 1, bias=False),
+            nn.Conv3d(out_channels, out_channels, 3, 1, 1, bias=True),
             nn.BatchNorm3d(out_channels),
             nn.ReLU(inplace=True),
         )
@@ -32,7 +32,7 @@ class UNET(nn.Module):
         super(UNET, self).__init__()
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
-        self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
+        self.pool = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)
 
         # Down part of UNET
         for feature in features:
@@ -48,7 +48,17 @@ class UNET(nn.Module):
         self.bottleneck = DoubleConv(features[-1], features[-1]*2)
         self.final_conv = nn.Conv3d(features[0], out_channels, kernel_size=1)
 
-    def forward(self, img):     #The print statements can be used to visualize the input and output sizes for debugging
+    def forward(self, img):
+        """
+        Forward pass of the UNet
+        Parameters
+        ----------
+        img : The input image of shape (BATCH_SIZE, 3, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
+
+        Returns: The output of the UNet of shape (BATCH_SIZE, 1, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
+        -------
+
+        """
         # Connection is the list of outputs from the downsampling path.
         # We save it to keep local information. So where is the information
         connections = []
@@ -56,7 +66,6 @@ class UNET(nn.Module):
         for down in self.downs:
             img = down(img)
             connections.append(img)
-
             img = self.pool(img)
 
         #link from downsampling to upsampling
@@ -73,7 +82,7 @@ class UNET(nn.Module):
                 connection = TF.resize(connection, size=img.shape[2:])
             #concatenat the image slices with the connection, along the channel axis
             img = torch.cat((img, connection), dim=1)
-            #convolutional layer
+            #DoubleConv is the downsampling layer
             img = self.ups[idx+1](img)
 
         x = self.final_conv(img)

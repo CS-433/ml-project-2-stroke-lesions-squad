@@ -1,59 +1,104 @@
-from typing import Optional
 import torch
 from torch import nn
-import torch.nn.functional as F
 
+def flatten(tensor):
+    """Flattens a given tensor such that the channel axis is first.
+    The shapes are transformed as follows:
+       (N, C, D, H, W) -> (C, N * D * H * W)
+    """
+    # number of channels
+    C = tensor.size(1)
+    # new axis order
+    axis_order = (1, 0) + tuple(range(2, tensor.dim()))
+    # Transpose: (N, C, D, H, W) -> (C, N, D, H, W)
+    transposed = tensor.permute(axis_order)
+    # Flatten: (C, N, D, H, W) -> (C, N * D * H * W)
+    return transposed.contiguous().view(C, -1)
 
-class Dice(nn.Module):
-    def __init__(self, thresh: float = 0.5):
-        """Dice coefficient."""
-        super().__init__()
-        assert 0 < thresh < 1, f"'thresh' must be in range (0, 1)"
-        self.thresh = thresh
+def compute_per_channel_dice(input, target, epsilon=1e-6, weight=None):
+    """
+    Computes DiceCoefficient as defined in https://arxiv.org/abs/1606.04797 given  a multi channel input and target.
+    Assumes the input is a normalized probability, e.g. a result of Sigmoid or Softmax function.
 
-    def forward(self, inputs: torch.Tensor, targets: torch.Tensor,
-                weights: Optional[torch.Tensor] = None, smooth: float = 0.01):
-        # Binarize prediction
-        inputs = torch.where(inputs < self.thresh, 0, 1)
-        batch_size = targets.shape[0]
+    Args:
+         input (torch.Tensor): NxCxSpatial input tensor
+         target (torch.Tensor): NxCxSpatial target tensor
+         epsilon (float): prevents division by zero
+         weight (torch.Tensor): Cx1 tensor of weight per channel/class
+    """
 
-        intersection = torch.logical_and(inputs, targets)
-        intersection = intersection.view(batch_size, -1).sum(-1)
-        targets_area = targets.view(batch_size, -1).sum(-1)
-        inputs_area = inputs.view(batch_size, -1).sum(-1)
-        dice = (2. * intersection + smooth) / (inputs_area + targets_area + smooth)
+    # input and target shapes must match
+    assert input.size() == target.size(), "'input' and 'target' must have the same shape"
 
-        if weights is not None:
-            assert weights.shape == dice.shape, \
-                f'"weights" must be in shape of "{dice.shape}"'
-            return (dice * weights).sum()
+    input = flatten(input)
+    target = flatten(target)
+    target = target.float()
 
-        return dice.mean()
+    # compute per channel Dice Coefficient
+    intersect = (input * target).sum(-1)
+    if weight is not None:
+        intersect = weight * intersect
 
+    # here we can use standard dice (input + target).sum(-1) or extension (see V-Net) (input^2 + target^2).sum(-1)
+    denominator = (input * input).sum(-1) + (target * target).sum(-1)
+    return 2 * (intersect / denominator.clamp(min=epsilon))
 
-class DiceBCELoss(nn.Module):
-    def __init__(self, thresh: float = 0.5, device = "cuda"):
-        """Dice loss + binary cross-entropy loss."""
-        super().__init__()
-        assert 0 < thresh < 1, f"'thresh' must be in range (0, 1)"
-        self.thresh = thresh
-        self.dice = Dice(self.thresh)
-        self.__name__ = 'DiceBCELoss'
-        self.device = device
+class _AbstractDiceLoss(nn.Module):
+    """
+    Base class for different implementations of Dice loss.
+    """
 
-    def forward(self, inputs: torch.Tensor, targets: torch.Tensor,
-                weights: Optional[torch.Tensor] = None, smooth: float = 0):
-        batch_size = inputs.shape[0]
-
-        bce = F.binary_cross_entropy_with_logits(inputs, targets, reduction='mean')
-
-        if weights is not None:
-            assert weights.shape == bce.shape, \
-                f'"weights" must be in shape of "{bce.shape}"'
-            bce = (bce * weights).sum()
+    def __init__(self, weight=None, normalization='sigmoid'):
+        super(_AbstractDiceLoss, self).__init__()
+        self.register_buffer('weight', weight)
+        # The output from the network during training is assumed to be un-normalized probabilities and we would
+        # like to normalize the logits. Since Dice (or soft Dice in this case) is usually used for binary data,
+        # normalizing the channels with Sigmoid is the default choice even for multi-class segmentation problems.
+        # However if one would like to apply Softmax in order to get the proper probability distribution from the
+        # output, just specify `normalization=Softmax`
+        assert normalization in ['sigmoid', 'softmax', 'none']
+        if normalization == 'sigmoid':
+            self.normalization = nn.Sigmoid()
+        elif normalization == 'softmax':
+            self.normalization = nn.Softmax(dim=1)
         else:
-            bce = bce.mean()
+            self.normalization = lambda x: x
 
-        dice_loss = 1 - self.dice(inputs, targets, weights, smooth)
-        dice_bce = bce + dice_loss
-        return dice_bce
+    def dice(self, input, target, weight):
+        # actual Dice score computation; to be implemented by the subclass
+        raise NotImplementedError
+
+    def forward(self, input, target):
+        # get probabilities from logits
+        input = self.normalization(input)
+
+        # compute per channel Dice coefficient
+        per_channel_dice = self.dice(input, target, weight=self.weight)
+
+        # average Dice score across all channels/classes
+        return 1. - torch.mean(per_channel_dice)
+
+class DiceLoss(_AbstractDiceLoss):
+    """Computes Dice Loss according to https://arxiv.org/abs/1606.04797.
+    For multi-class segmentation `weight` parameter can be used to assign different weights per class.
+    The input to the loss function is assumed to be a logit and will be normalized by the Sigmoid function.
+    """
+
+    def __init__(self, weight=None, normalization='sigmoid'):
+        super().__init__(weight, normalization)
+
+    def dice(self, input, target, weight):
+        return compute_per_channel_dice(input, target, weight=self.weight)
+
+class BCEDiceLoss(nn.Module):
+    """Linear combination of BCE and Dice losses"""
+
+    def __init__(self, alpha, beta, weight, device):
+        super(BCEDiceLoss, self).__init__()
+        self.alpha = alpha
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([weight])).to(device)
+        self.beta = beta
+        self.dice = DiceLoss()
+
+    def forward(self, input, target):
+        return self.alpha * self.bce(input, target) + self.beta * self.dice(input, target)
