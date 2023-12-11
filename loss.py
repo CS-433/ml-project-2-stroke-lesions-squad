@@ -1,5 +1,7 @@
+import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 def flatten(tensor):
     """Flattens a given tensor such that the channel axis is first.
@@ -93,12 +95,16 @@ class DiceLoss(_AbstractDiceLoss):
 class BCEDiceLoss(nn.Module):
     """Linear combination of BCE and Dice losses"""
 
-    def __init__(self, alpha, beta, weight, device):
+    def __init__(self, alpha, beta, device):
         super(BCEDiceLoss, self).__init__()
         self.alpha = alpha
-        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([weight])).to(device)
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([350.0])).to(device)
         self.beta = beta
         self.dice = DiceLoss()
 
     def forward(self, input, target):
+        loss = self.alpha * self.bce(input, target) + self.beta * self.dice(input, target)
+        if(np.isnan(loss.item())):
+            print("Error, loss is nan. BCE:" + self.bce(input, target) + "Dice" + self.dice(input, target))
+            return F.relu(input)
         return self.alpha * self.bce(input, target) + self.beta * self.dice(input, target)

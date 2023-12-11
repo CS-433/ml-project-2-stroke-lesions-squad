@@ -25,10 +25,10 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 4
 NUM_EPOCHS = 30
 NUM_WORKERS = os.cpu_count()
-IMAGE_HEIGHT = 80
-IMAGE_WIDTH = 80
-IMAGE_DEPTH = 80
-CROP = [1,1,1]
+IMAGE_HEIGHT = 96
+IMAGE_WIDTH = 96
+IMAGE_DEPTH = 96
+CROP = [2,2,2]
 PIN_MEMORY = True
 LOAD_MODEL = False
 TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug_L/imagesTr"
@@ -94,6 +94,7 @@ def main():
     patch_size = (IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
 
     #transform of a 3D image.
+
     train_transform = tio.Compose([
         #Random rotation of 10 degrees
         tio.RandomAffine(scales=1, degrees=[-10, 10, -10, 10, -10, 10], isotropic=True, image_interpolation='nearest'),
@@ -113,7 +114,7 @@ def main():
 
     #model definition
     model = UNET(in_channels=3, out_channels=1).to(DEVICE)
-    loss_fn = BCEDiceLoss(0.3, 0.7, 50.0, DEVICE)
+    loss_fn = BCEDiceLoss(0.3, 0.7,  DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=LEARNING_RATE/NUM_EPOCHS)
 
     create_model(model)

@@ -49,6 +49,7 @@ class MRIImage(Dataset):
         original_images[3] = nib.load(target_path).get_fdata()
         if self.transform is not None:
             original_images = self.transform(original_images)
+            original_images[0:3] = histogram(original_images[0:3])
             original_images[0:3] = normalize(original_images[0:3])
 
         mask = np.array([original_images[3] > 0.5]).astype(np.float32)
@@ -71,3 +72,18 @@ def normalize(image):
     norm_0_1 = (image - min_value) / (max_value - min_value + eps)
 
     return np.clip(2*norm_0_1 - 1, -1, 1)
+
+def histogram(image):
+    """
+    Histogram standardization, landmarks derived from the ADNI dataset, computed by Li et al
+    ----------
+    image: an image of shape (BATCH_SIZE, 3, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
+
+    Returns: the normalized image
+    -------
+    """
+    LI_LANDMARKS = "0 8.06305571158 15.5085721044 18.7007018006 21.5032879029 26.1413278906 29.9862059045 33.8384058795 38.1891334787 40.7217966068 44.0109152758 58.3906435207 100.0"
+    LI_LANDMARKS = np.array([float(n) for n in LI_LANDMARKS.split()])
+    landmarks_dict = {'default_image_name': LI_LANDMARKS}
+    histogram =  tio.HistogramStandardization(landmarks_dict, masking_method=lambda x: x > x.mean())
+    return histogram(image)
