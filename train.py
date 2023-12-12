@@ -20,7 +20,7 @@ from utils import (
 )
 
 # Hyperparameters etc
-LEARNING_RATE = 1E-3
+LEARNING_RATE = 1E-5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 4
 NUM_EPOCHS = 30
@@ -73,7 +73,6 @@ def train_fn(loader, model, optimizer, loss_fn, scaler):
                     scaler.scale(loss).backward()
                     scaler.step(optimizer)
                     scaler.update()
-                    optimizer.step()
 
                     # update tqdm loop
                     number_iter += 1
@@ -103,6 +102,9 @@ def main():
         tio.CropOrPad((IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)),
         tio.RandomMotion(p=0.2),
         tio.RandomBiasField(p=0.3),
+        tio.RandomSpike(),
+        tio.RandomGhosting(),
+        tio.RandomMotion(num_transforms=6, image_interpolation='nearest'),
         tio.RandomNoise(p=0.5),
         tio.RandomFlip(),
         #Normalization occurs later
@@ -110,11 +112,13 @@ def main():
     val_transform = tio.Compose([
         tio.ToCanonical(),
         tio.CropOrPad((IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)),
+        tio.RandomNoise(p=0.2),
     ])
 
     #model definition
     model = UNET(in_channels=3, out_channels=1).to(DEVICE)
-    loss_fn = BCEDiceLoss(0.3, 0.7,  DEVICE)
+
+    loss_fn = BCEDiceLoss(0.2, 0.8, 1.0, DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=LEARNING_RATE/NUM_EPOCHS)
 
     create_model(model)

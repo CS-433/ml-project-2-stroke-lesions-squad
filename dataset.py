@@ -48,8 +48,8 @@ class MRIImage(Dataset):
         original_images[2] = nib.load(flair_path).get_fdata()
         original_images[3] = nib.load(target_path).get_fdata()
         if self.transform is not None:
+            #original_images[0:3] = histogram(original_images[0:3])
             original_images = self.transform(original_images)
-            original_images[0:3] = histogram(original_images[0:3])
             original_images[0:3] = normalize(original_images[0:3])
 
         mask = np.array([original_images[3] > 0.5]).astype(np.float32)
