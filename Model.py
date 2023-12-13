@@ -3,103 +3,90 @@ import os
 import random
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-
-
-import cv2
-from tqdm.notebook import tqdm
-from glob import glob
-from itertools import chain
-from skimage.io import imread, imshow, concatenate_images
-from skimage.transform import resize
-from skimage.morphology import label
-from sklearn.model_selection import train_test_split
 
 import torch
-import torchvision
 import torch.nn as nn
-import torch.optim as optim
-import torchvision.transforms as transforms
 import torchvision.transforms.functional as TF
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-
-from PIL import Image
 
 
 
-def conv_layer(input_channels, output_channels):     #This is a helper function to create the convolutional blocks
-    conv = nn.Sequential(
-        nn.Conv2d(input_channels, output_channels, kernel_size=3, padding=1),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(output_channels, output_channels, kernel_size=3, padding=1),
-        nn.BatchNorm2d(output_channels),
-        nn.ReLU(inplace=True)
-    )
-    return conv
+class DoubleConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(DoubleConv, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, 3, 1, 1, bias=True),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.1),
+            nn.Conv3d(out_channels, out_channels, 3, 1, 1, bias=True),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.1),
+        )
 
-class UNet(nn.Module):
-    def __init__(self):
-        super(UNet, self).__init__()
-        
-        self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.down_1 = conv_layer(3, 64)
-        self.down_2 = conv_layer(64, 128)
-        self.down_3 = conv_layer(128, 256)
-        self.down_4 = conv_layer(256, 512)
-        self.down_5 = conv_layer(512, 1024)
-        
-        self.up_1 = nn.ConvTranspose2d(in_channels=1024, out_channels=512, kernel_size=2, stride=2)
-        self.up_conv_1 = conv_layer(1024, 512)
-        self.up_2 = nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=2, stride=2)
-        self.up_conv_2 = conv_layer(512, 256)
-        self.up_3 = nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
-        self.up_conv_3 = conv_layer(256, 128)
-        self.up_4 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=2)
-        self.up_conv_4 = conv_layer(128, 64)
-        
-        self.output = nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, padding=0)
-        self.output_activation = nn.Sigmoid()
-                
-    def forward(self, img):     #The print statements can be used to visualize the input and output sizes for debugging
-        x1 = self.down_1(img)
-        #print(x1.size())
-        x2 = self.max_pool(x1)
-        #print(x2.size())
-        x3 = self.down_2(x2)
-        #print(x3.size())
-        x4 = self.max_pool(x3)
-        #print(x4.size())
-        x5 = self.down_3(x4)
-        #print(x5.size())
-        x6 = self.max_pool(x5)
-        #print(x6.size())
-        x7 = self.down_4(x6)
-        #print(x7.size())
-        x8 = self.max_pool(x7)
-        #print(x8.size())
-        x9 = self.down_5(x8)
-        #print(x9.size())
-        
-        x = self.up_1(x9)
-        #print(x.size())
-        x = self.up_conv_1(torch.cat([x, x7], 1))
-        #print(x.size())
-        x = self.up_2(x)
-        #print(x.size())
-        x = self.up_conv_2(torch.cat([x, x5], 1))
-        #print(x.size())
-        x = self.up_3(x)
-        #print(x.size())
-        x = self.up_conv_3(torch.cat([x, x3], 1))
-        #print(x.size())
-        x = self.up_4(x)
-        #print(x.size())
-        x = self.up_conv_4(torch.cat([x, x1], 1))
-        #print(x.size())
-        
-        x = self.output(x)
-        x = self.output_activation(x)
-        #print(x.size())
-        
+    def forward(self, x):
+        return self.conv(x)
+
+class UNET(nn.Module):
+    def __init__(
+            self, in_channels=3, out_channels=1, features=[64, 128, 256],
+    ):
+        super(UNET, self).__init__()
+        self.ups = nn.ModuleList()
+        self.downs = nn.ModuleList()
+        self.pool = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)
+
+        # Down part of UNET
+        for feature in features:
+            self.downs.append(DoubleConv(in_channels, feature))
+            in_channels = feature
+
+        # Up part of UNET
+        for feature in reversed(features):
+            #ConvTranspose3d is more expensive in terms of memory and time
+            self.ups.append(nn.ConvTranspose3d(feature*2, feature, kernel_size=2, stride=2,))
+            self.ups.append(DoubleConv(feature*2, feature))
+
+        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
+        self.final_conv = nn.Conv3d(features[0], out_channels, kernel_size=1)
+
+    def forward(self, img):
+        """
+        Forward pass of the UNet
+        Parameters
+        ----------
+        img : The input image of shape (BATCH_SIZE, 3, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
+
+        Returns: The output of the UNet of shape (BATCH_SIZE, 1, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)
+        -------
+
+        """
+        # Connection is the list of outputs from the downsampling path.
+        # We save it to keep local information. So where is the information
+        connections = []
+        #path down the UNet, finds important informations
+        for down in self.downs:
+            img = down(img)
+            connections.append(img)
+            img = self.pool(img)
+
+        #link from downsampling to upsampling
+        img = self.bottleneck(img)
+
+        #reverse the connections list to go up the UNet
+        connections = connections[::-1]
+        for idx in range(0, len(self.ups), 2):
+            #ConvTranspose3d is the upsampling layer
+            img = self.ups[idx](img)
+            #concatenates the output from the upsampling layer with the output from the downsampling layer
+            connection = connections[idx//2]
+            if(img.shape != connection.shape):
+                connection = TF.resize(connection, size=img.shape[2:])
+            #concatenat the image slices with the connection, along the channel axis
+            img = torch.cat((img, connection), dim=1)
+            #DoubleConv is the downsampling layer
+            img = self.ups[idx+1](img)
+
+        x = self.final_conv(img)
+
         return x
