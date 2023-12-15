@@ -31,8 +31,8 @@ IMAGE_DEPTH = 96
 CROP = [2,2,2]
 PIN_MEMORY = True
 LOAD_MODEL = False
-TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug_L/imagesTr"
-TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET_Debug_L/labelsTr"
+TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET/imagesTr"
+TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET/labelsTr"
 
 
 def train_fn(loader, model, optimizer, loss_fn, scaler):
@@ -118,7 +118,7 @@ def main():
     #model definition
     model = UNET(in_channels=3, out_channels=1).to(DEVICE)
 
-    loss_fn = BCEDiceLoss(0.2, 0.8, 1.0, DEVICE)
+    loss_fn = BCEDiceLoss(0.2, 0.8, 0.1, DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=LEARNING_RATE/NUM_EPOCHS)
 
     create_model(model)
