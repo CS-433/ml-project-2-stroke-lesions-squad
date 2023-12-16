@@ -124,9 +124,9 @@ class DiceCrossEntropyLoss(nn.Module):
         # Reshape predictions and targets to calculate Dice Loss
         predicted = predicted.squeeze(1)
         
-
+        sig_predicted = nn.Sigmoid()(predicted)
         # Calculate Dice Loss
-        dice_loss = 1 - dice_coefficient(predicted, target)
+        dice_loss = 1 - dice_coefficient(sig_predicted, target)
 
         # Calculate Cross Entropy Loss
         cross_entropy_loss = nn.CrossEntropyLoss()(predicted, target)
@@ -152,6 +152,6 @@ class DiceBCELoss_2(nn.Module):
         bce_loss = nn.BCEWithLogitsLoss()(predicted, target)
 
         # Combine both losses
-        combined_loss = dice_loss + bce_loss
+        combined_loss = 0.75*dice_loss + 0.25*bce_loss
 
         return combined_loss

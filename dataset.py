@@ -7,7 +7,7 @@ import numpy as np
 import nibabel as nib
 import torchio as tio
 
-class MRIImage(Dataset):
+class MRIImageFull(Dataset):
     def __init__(self, images, targets, transform=None):
         """
         Create a dataset from a dataframe of images and targets.
@@ -59,7 +59,7 @@ class MRIImage(Dataset):
 
 
 class MRIImage_patched(Dataset):
-    def __init__(self, images, targets, transform=None,patch_size = (64, 64, 64),num_patches = 4 ):
+    def __init__(self, images, targets, transform=None,patch_size = (64, 64, 64),num_patches = 2):
         """
         Create a dataset from a dataframe of images and targets.
         Parameters

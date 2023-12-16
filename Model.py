@@ -17,11 +17,9 @@ class DoubleConv(nn.Module):
             nn.Conv3d(in_channels, out_channels, 3, 1, 1, bias=True),
             nn.BatchNorm3d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.1),
             nn.Conv3d(out_channels, out_channels, 3, 1, 1, bias=True),
             nn.BatchNorm3d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.1),
         )
 
     def forward(self, x):
@@ -29,7 +27,7 @@ class DoubleConv(nn.Module):
 
 class UNET(nn.Module):
     def __init__(
-            self, in_channels=3, out_channels=1, features=[64, 128, 256],
+            self, in_channels=3, out_channels=1, features=[64, 128, 256, 512],
     ):
         super(UNET, self).__init__()
         self.ups = nn.ModuleList()

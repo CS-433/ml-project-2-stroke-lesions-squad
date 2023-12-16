@@ -1,6 +1,6 @@
 import torch
 import torchvision
-from dataset import MRIImage, MRIImage_patched
+from dataset import MRIImage_patched, MRIImageFull
 from torch.utils.data import DataLoader
 import os
 CROP = [2,2,2]
@@ -75,7 +75,7 @@ def get_loaders(
     -------
 
     """
-    train_ds = MRIImage(
+    train_ds = MRIImageFull(
         train_dir,
         train_maskdir,
         transform=train_transform,
@@ -90,7 +90,7 @@ def get_loaders(
         persistent_workers=True
     )
 
-    val_ds = MRIImage(
+    val_ds = MRIImageFull(
         val_dir,
         val_maskdir,
         transform=val_transform,
@@ -117,6 +117,8 @@ def get_loaders_patched(
     val_transform,
     num_workers=4,
     pin_memory=True,
+    patch_size=(64, 64, 64),
+    num_patches=2,
 ):
     """
 
@@ -140,6 +142,8 @@ def get_loaders_patched(
         train_dir,
         train_maskdir,
         transform=train_transform,
+        patch_size=patch_size,
+        num_patches=num_patches
     )
 
     train_loader = DataLoader(
@@ -148,10 +152,10 @@ def get_loaders_patched(
         num_workers=num_workers,
         pin_memory=pin_memory,
         shuffle=True,
-        persistent_workers=True
+        persistent_workers=True,
     )
 
-    val_ds = MRIImage_patched(
+    val_ds = MRIImageFull(
         val_dir,
         val_maskdir,
         transform=val_transform,
@@ -163,11 +167,10 @@ def get_loaders_patched(
         num_workers=num_workers,
         pin_memory=pin_memory,
         shuffle=False,
-        persistent_workers=True
+        persistent_workers=True,
     )
 
     return train_loader, val_loader
-
 
 def crop_image(image, mask):
     """
@@ -199,34 +202,33 @@ def bayesian(preds, y):
 def f1(tp, fp, fn):
     return 2*tp/(2*tp+fp+fn)
 
-def check_accuracy(loader, model, device="cuda"):
+def check_accuracy(loader, model, crop_patch_size, device="cuda"):
     num_correct = 0
     num_pixels = 0
     model.eval()
 
-    with torch.no_grad():
-        tp, tn, fp, fn = 0, 0, 0, 0
-        for x, y in loader:
-            x = x.to(device)
-            y = y.to(device)
-            crop_img, crop_target = crop_image(x, y)
-            for i in range(CROP[0]):
-                for j in range(CROP[1]):
-                    for k in range(CROP[2]):
-                        x = crop_img[:,:, i,j,k,:,:,:]
-                        y = crop_target[:, :, i,j,k,:,:,:]
-                        binary_y = (y > 0.5).long()
-                        with torch.no_grad():
-                            preds = torch.sigmoid(model(x.float()))
-                            preds = (preds > 0.5).long()
-                        num_correct += (preds == binary_y).sum()
-                        num_pixels += torch.numel(preds)
+    tp, tn, fp, fn = 0, 0, 0, 0
+    for x, y in loader:
+        x = x.to(device)
+        y = y.to(device)
+        sx, sy, sz = crop_patch_size[0], crop_patch_size[1], crop_patch_size[2]
+        for i in range(0, y.shape[2], sx):
+            for j in range(0, y.shape[3], sy):
+                for k in range(0, y.shape[4], sz):
+                    crop_x = x[:, :, i:i + sx, j:j + sy, k:k + sz]
+                    crop_y = y[:, :, i:i + sx, j:j + sy, k:k + sz]
+                    binary_y = (crop_y > 0.5).long()
+                    with torch.no_grad():
+                        preds = torch.sigmoid(model(crop_x.float()))
+                        preds = (preds > 0.5).long()
+                    num_correct += (preds == binary_y).sum()
+                    num_pixels += torch.numel(preds)
 
-                        f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
-                        tp += f_tp
-                        tn += f_tn
-                        fp += f_fp
-                        fn += f_fn
+                    f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
+                    tp += f_tp
+                    tn += f_tn
+                    fp += f_fp
+                    fn += f_fn
 
 
     print(
@@ -237,14 +239,16 @@ def check_accuracy(loader, model, device="cuda"):
     model.train()
 
 def save_predictions_as_imgs(
-    loader, model, folder="saved_images/", device="cuda"
+    loader, model, crop_patch_size, epoch, folder="saved_images/", device="cuda"
 ):
     """
     Save the predictions of the model on the loader in the folder. Saves one image per batch.
     Parameters
     ----------
-    loader : The loader to use, one iteration of the loader must return the image and the mask of shape (BATCH_SIZE, 3, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH) and (BATCH_SIZE, 1, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH) respectively
+    loader : The loader to use, one iteration of the loader must return the image and the mask of shape (BATCH_SIZE, 3, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH) and (BATCH_SIZE, IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH) respectively
     model : The model to use
+    crop_patch_size : The size of the patch to crop
+    epoch : The epoch to save the images
     folder : The folder to save the images, defaults to "saved_images/"
     device : The device to use, defaults to "cuda"
     """
@@ -253,22 +257,24 @@ def save_predictions_as_imgs(
     for x, y in loader:
         x = x.to(device=device)
         y = y.to(device=device)
-        crop_img, crop_target = crop_image(x, y)
-        for i in range(CROP[0]):
-            for j in range(CROP[1]):
-                for k in range(CROP[2]):
-                    img = crop_img[:, :, i, j, k, :, :, :]
-                    targ = crop_target[:, :, i, j, k, :, :, :]
+        true_image = y[0, 0]
+        full_pred = torch.zeros(y.shape[2], y.shape[3], y.shape[4])
+        sx, sy, sz = crop_patch_size[0], crop_patch_size[1], crop_patch_size[2]
+        for i in range(0, y.shape[2], sx):
+            for j in range(0, y.shape[3], sy):
+                for k in range(0, y.shape[4], sz):
+                    x_crop = x[:,:, i:i+sx,j:j+sy,k:k+sz]
                     with torch.no_grad():
-                        preds = torch.sigmoid(model(img.float()))
+                        preds = torch.sigmoid(model(x_crop.float()))
                         preds = (preds > 0.5).float()
+                    full_pred[i:i+sx,j:j+sy,k:k+sz] = preds[0, 0]
 
-                    for slice in range(0, preds.shape[2] , preds.shape[2]//4):
-                        pred_image = preds[0, 0, slice]
-                        y_image = targ[0, 0, slice]
-                        torchvision.utils.save_image(
-                            pred_image, f"{folder}/pred_{batch_idx}_slice{slice}.png"
-                        )
-                        torchvision.utils.save_image(y_image, f"{folder}/y_{batch_idx}_slice{slice}.png")
+        for slice in range(0, full_pred.shape[0], full_pred.shape[0] // 4):
+            pred_image = full_pred[slice]
+            y_image = true_image[slice]
+            torchvision.utils.save_image(
+                pred_image, f"{folder}/epoch_{epoch}_pred_{batch_idx}_slice{slice}.png"
+            )
+            torchvision.utils.save_image(y_image, f"{folder}/epoch_{epoch}_y_{batch_idx}_slice{slice}.png")
         batch_idx += 1
     model.train()

@@ -21,19 +21,19 @@ from utils import (
 )
 
 # Hyperparameters etc
-LEARNING_RATE = 1E-5
+LEARNING_RATE = 5E-4
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 1
-NUM_EPOCHS = 1
-NUM_WORKERS = os.cpu_count()
+BATCH_SIZE = 4
+NUM_EPOCHS = 30
+NUM_WORKERS = os.cpu_count() - 2
 IMAGE_HEIGHT = 128
 IMAGE_WIDTH = 128
 IMAGE_DEPTH = 128
 CROP = [2,2,2]
 PIN_MEMORY = True
 LOAD_MODEL = False
-TRAIN_IMG_DIR = "C:\\Users\\flipo\\Documents\\Data_GitHub\\Dataset001_ISLES22forUNET\\imagesTr"
-TRAIN_MASK_DIR = "C:\\Users\\flipo\\Documents\\Data_GitHub\\Dataset001_ISLES22forUNET\\labelsTr"
+TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET/imagesTr"
+TRAIN_MASK_DIR = "Dataset001_ISLES22forUNET/labelsTr"
 
 
 def train_fn_patched(loader, model, optimizer, loss_fn, scaler):
@@ -134,8 +134,11 @@ def main():
 
     #splitting test, train and validation
     df = pd.DataFrame(data={"filename": train_files, 'mask': mask_files})
-    df_train, df_test = train_test_split(df, test_size=0.9)
+    df_train, df_test = train_test_split(df, test_size=0.2)
     df_train, df_val = train_test_split(df_train, test_size=0.2)
+
+    crop_patch_size = (64,64,64)
+    num_patches = 2
 
     #Creating Dataloaders
     train_loader, val_loader = get_loaders_patched(
@@ -148,6 +151,8 @@ def main():
             val_transform,
             NUM_WORKERS,
             PIN_MEMORY,
+            patch_size=crop_patch_size,
+            num_patches=num_patches,
             )
 
     scaler = torch.cuda.amp.GradScaler()
@@ -156,16 +161,15 @@ def main():
     for epoch in range(NUM_EPOCHS):
         train_fn_patched(train_loader, model, optimizer, loss_fn, scaler)
         # print some examples to a folder
-        """if(epoch%5 == 0):
+        if(epoch%5 == 0):
             save_predictions_as_imgs(
-            val_loader, model, folder="saved_images/", device=DEVICE
-            )
-            check_accuracy(val_loader, model, device=DEVICE)
+            val_loader, model, crop_patch_size, epoch, folder="saved_images/", device=DEVICE,)
+            check_accuracy(val_loader, model, crop_patch_size, device=DEVICE)
             checkpoint = {
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
             }
-            save_checkpoint(checkpoint, "checkpoints")"""
+            save_checkpoint(checkpoint, "checkpoints")
             
     """save_predictions_as_imgs(
         val_loader, model, folder="saved_images/", device=DEVICE
