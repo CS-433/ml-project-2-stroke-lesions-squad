@@ -1,12 +1,11 @@
 import torch
 import torchvision
-from dataset import MRIImage_patched, MRIImageFull
 from torch.utils.data import DataLoader
 import os
 CROP = [2,2,2]
 
 
-def save_checkpoint(state,checkpoint_dir):
+def save_checkpoint(state,checkpoint_dir, epoch):
     """Saves model and training parameters at '{checkpoint_dir}/last_checkpoint.pytorch'.
 
     Args:
@@ -18,11 +17,11 @@ def save_checkpoint(state,checkpoint_dir):
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
 
-    last_file_path = os.path.join(checkpoint_dir, 'last_checkpoint.pytorch')
+    last_file_path = os.path.join(checkpoint_dir, f'checkpoint_epoch{epoch}.pytorch')
     torch.save(state, last_file_path)
 
 def load_checkpoint(checkpoint_path, model, optimizer=None,
-                    model_key='model_state_dict', optimizer_key='optimizer_state_dict'):
+                    model_key='state_dict', optimizer_key='optimizer'):
     """Loads model and training parameters from a given checkpoint_path
     If optimizer is provided, loads optimizer's state_dict of as well.
 
@@ -45,132 +44,6 @@ def load_checkpoint(checkpoint_path, model, optimizer=None,
         optimizer.load_state_dict(state[optimizer_key])
 
     return state
-
-def get_loaders(
-    train_dir,
-    train_maskdir,
-    val_dir,
-    val_maskdir,
-    batch_size,
-    train_transform,
-    val_transform,
-    num_workers=4,
-    pin_memory=True,
-):
-    """
-
-    Parameters
-    ----------
-    train_dir : The directory of the train file of shape (3, n_train)
-    train_maskdir : The directory of the train mask file of shape (1, n_train)
-    val_dir : The directory of the validation file of shape (3, n_val)
-    val_maskdir : The directory of the validation mask file of shape (1, n_val)
-    batch_size : The batch size
-    train_transform : The transform for the train dataset
-    val_transform : The transform for the validation dataset
-    num_workers : The number of workers in parallel for the DataLoader, defaults to 4
-    pin_memory : Whether to pin the memory, defaults to True
-
-    Returns : train_loader a DataLoader for the train dataset, val_loader a DataLoader for the validation dataset
-    -------
-
-    """
-    train_ds = MRIImageFull(
-        train_dir,
-        train_maskdir,
-        transform=train_transform,
-    )
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=True,
-        persistent_workers=True
-    )
-
-    val_ds = MRIImageFull(
-        val_dir,
-        val_maskdir,
-        transform=val_transform,
-    )
-
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=False,
-        persistent_workers=True
-    )
-
-    return train_loader, val_loader
-
-def get_loaders_patched(
-    train_dir,
-    train_maskdir,
-    val_dir,
-    val_maskdir,
-    batch_size,
-    train_transform,
-    val_transform,
-    num_workers=4,
-    pin_memory=True,
-    patch_size=(64, 64, 64),
-    num_patches=2,
-):
-    """
-
-    Parameters
-    ----------
-    train_dir : The directory of the train file of shape (3, n_train)
-    train_maskdir : The directory of the train mask file of shape (1, n_train)
-    val_dir : The directory of the validation file of shape (3, n_val)
-    val_maskdir : The directory of the validation mask file of shape (1, n_val)
-    batch_size : The batch size
-    train_transform : The transform for the train dataset
-    val_transform : The transform for the validation dataset
-    num_workers : The number of workers in parallel for the DataLoader, defaults to 4
-    pin_memory : Whether to pin the memory, defaults to True
-
-    Returns : train_loader a DataLoader for the train dataset, val_loader a DataLoader for the validation dataset
-    -------
-
-    """
-    train_ds = MRIImage_patched(
-        train_dir,
-        train_maskdir,
-        transform=train_transform,
-        patch_size=patch_size,
-        num_patches=num_patches
-    )
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=True,
-        persistent_workers=True,
-    )
-
-    val_ds = MRIImageFull(
-        val_dir,
-        val_maskdir,
-        transform=val_transform,
-    )
-
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=False,
-        persistent_workers=True,
-    )
-
-    return train_loader, val_loader
 
 def crop_image(image, mask):
     """
@@ -212,11 +85,11 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
         x = x.to(device)
         y = y.to(device)
         sx, sy, sz = crop_patch_size[0], crop_patch_size[1], crop_patch_size[2]
-        for i in range(0, y.shape[2], sx):
-            for j in range(0, y.shape[3], sy):
-                for k in range(0, y.shape[4], sz):
+        for i in range(0, y.shape[1], sx):
+            for j in range(0, y.shape[2], sy):
+                for k in range(0, y.shape[3], sz):
                     crop_x = x[:, :, i:i + sx, j:j + sy, k:k + sz]
-                    crop_y = y[:, :, i:i + sx, j:j + sy, k:k + sz]
+                    crop_y = y[:, i:i + sx, j:j + sy, k:k + sz]
                     binary_y = (crop_y > 0.5).long()
                     with torch.no_grad():
                         preds = torch.sigmoid(model(crop_x.float()))
@@ -237,6 +110,7 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
     print(f"True Positive: {tp}, True Negative: {tn}, False Positive: {fp}, False Negative: {fn}")
     print(f"f1 score: {f1(tp, fp, fn)}")
     model.train()
+    return num_correct / num_pixels, f1(tp, fp, fn), tp, tn, fp, fn
 
 def save_predictions_as_imgs(
     loader, model, crop_patch_size, epoch, folder="saved_images/", device="cuda"
@@ -257,12 +131,12 @@ def save_predictions_as_imgs(
     for x, y in loader:
         x = x.to(device=device)
         y = y.to(device=device)
-        true_image = y[0, 0]
-        full_pred = torch.zeros(y.shape[2], y.shape[3], y.shape[4])
+        true_image = y[0]
+        full_pred = torch.zeros(y.shape[1], y.shape[2], y.shape[3])
         sx, sy, sz = crop_patch_size[0], crop_patch_size[1], crop_patch_size[2]
-        for i in range(0, y.shape[2], sx):
-            for j in range(0, y.shape[3], sy):
-                for k in range(0, y.shape[4], sz):
+        for i in range(0, y.shape[1], sx):
+            for j in range(0, y.shape[2], sy):
+                for k in range(0, y.shape[3], sz):
                     x_crop = x[:,:, i:i+sx,j:j+sy,k:k+sz]
                     with torch.no_grad():
                         preds = torch.sigmoid(model(x_crop.float()))

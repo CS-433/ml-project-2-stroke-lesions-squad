@@ -144,14 +144,15 @@ class DiceBCELoss_2(nn.Module):
     def forward(self, predicted, target):
         # Ensure predicted and target tensors are of the same shape
         predicted = predicted.squeeze(1)
+        pos_weight = (target == 0.).sum()/(target.sum()+1e-6)
 
         # Calculate Dice Loss
         dice_loss = 1 - dice_coefficient(predicted, target)
 
         # Calculate Binary Cross Entropy Loss
-        bce_loss = nn.BCEWithLogitsLoss()(predicted, target)
+        bce_loss = nn.BCEWithLogitsLoss(pos_weight = pos_weight)(predicted, target)
 
         # Combine both losses
-        combined_loss = 0.75*dice_loss + 0.25*bce_loss
+        combined_loss = 0.5*dice_loss + 0.5*bce_loss
 
         return combined_loss
