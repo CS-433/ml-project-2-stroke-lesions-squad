@@ -76,7 +76,7 @@ class MRIImage(Dataset):
         self.labels_paths = np.sort(labels_list)
         self.image_paths = np.sort(images_list).reshape(-1, 3)
 
-        self.image_paths, self.labels_paths = remove_missing(self.image_paths, self.labels_paths)
+        #self.image_paths, self.labels_paths = remove_missing(self.image_paths, self.labels_paths)
 
         num_training_imgs = len(self.labels_paths)
         train_val_test = [int(x * num_training_imgs) for x in split_ratios]

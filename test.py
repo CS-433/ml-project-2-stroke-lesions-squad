@@ -67,8 +67,4 @@ def test_extract():
 
 def test_reshape():
     img = torch.randn(3, 64, 64, 64)
-    shape = (64, 64, 64)
-
-    img2 = tio.Resize(shape)(img)
-
-    print(img - img2)
+    print(img.unsqueeze(1).shape)

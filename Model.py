@@ -2,7 +2,6 @@
 import os
 import random
 import time
-from pytorch_model_summary import summary
 
 import pandas as pd
 import numpy as np
@@ -95,10 +94,3 @@ class UNET(nn.Module):
         x = self.final_conv(img)
 
         return x
-
-if __name__ == '__main__':
-    #Configurations according to the Xenopus kidney dataset
-    model = UNET(in_channels=3, num_classes=1)
-    start_time = time.time()
-    summary(model=model, input_size=(3, 16, 128, 128), batch_size=-1, device="cpu")
-    print("--- %s seconds ---" % (time.time() - start_time))

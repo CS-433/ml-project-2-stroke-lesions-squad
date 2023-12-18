@@ -5,12 +5,12 @@ import shutil
 import torch
 from tqdm import tqdm
 
-LEARNING_RATE = 1E-3
+LEARNING_RATE = 3E-4
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-TRAIN_BATCH_SIZE = 8
-VAL_BATCH_SIZE = 8
-TEST_BATCH_SIZE = 8
+TRAIN_BATCH_SIZE = 16
+VAL_BATCH_SIZE = 16
+TEST_BATCH_SIZE = 16
 
 NUM_EPOCHS = 50
 NUM_WORKERS = os.cpu_count()

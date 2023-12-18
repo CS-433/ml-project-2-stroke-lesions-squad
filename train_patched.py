@@ -3,9 +3,11 @@ import os
 import numpy as np
 import torchio as tio
 import torch
+from monai.losses import DiceCELoss
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
+from monai import losses
 from loss import DiceBCELoss_2
 
 from Model import UNET
@@ -30,14 +32,15 @@ def train_metrics(predictions, targets):
     Returns: The accuracy and f1 score
     -------
     """
-    predictions = (predictions > 0.5).float()
+    predictions = (predictions > 0.5).long()
+    targets = (targets > 0.5).long()
     tp = torch.logical_and(predictions == 1, targets == 1).sum().item()
     tn = torch.logical_and(predictions == 0, targets == 0).sum().item()
     fp = torch.logical_and(predictions == 1, targets == 0).sum().item()
     fn = torch.logical_and(predictions == 0, targets == 1).sum().item()
 
     accuracy = (tp + tn) / (tp + tn + fp + fn)
-    f1 = 2 * tp / (2 * tp + fp + fn)
+    f1 = 2 * tp / (2 * tp + fp + fn+ 1e-10)
     return accuracy, f1, tp, tn, fp, fn
 
 
@@ -68,7 +71,7 @@ def train_fn_patched(loader, model, optimizer, loss_fn, scaler):
         # forward
         with torch.cuda.amp.autocast():
             predictions = model(data.float())
-            loss = loss_fn(predictions, targets)
+            loss = loss_fn(predictions, targets.unsqueeze(1)).to(device=DEVICE)
 
         if np.isnan(loss.item()):
             print("Nan loss encountered")
@@ -118,7 +121,7 @@ def main(backup_rate = 5):
     #model definition
     model = UNET(in_channels=3, out_channels=1).to(DEVICE)
 
-    loss_fn = DiceBCELoss_2(device=DEVICE)
+    loss_fn = DiceCELoss(sigmoid=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=LEARNING_RATE/NUM_EPOCHS)
 
     #Creating Dataloaders
