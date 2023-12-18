@@ -150,7 +150,7 @@ class DiceBCELoss_2(nn.Module):
         dice_loss = 1 - dice_coefficient(predicted, target)
 
         # Calculate Binary Cross Entropy Loss
-        bce_loss = nn.BCEWithLogitsLoss(pos_weight = pos_weight)(predicted, target)
+        bce_loss = nn.BCEWithLogitsLoss(pos_weight = torch.tensor([25.0]))(predicted, target)
 
         # Combine both losses
         combined_loss = 0.5*dice_loss + 0.5*bce_loss

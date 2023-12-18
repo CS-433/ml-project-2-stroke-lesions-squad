@@ -1,5 +1,6 @@
 import copy
 import os
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
@@ -11,6 +12,49 @@ from config import (
     NUM_WORKERS, PIN_MEMORY
 )
 import torchvision.transforms.functional as TF
+import torchio as tio
+
+
+def remove_missing(image_paths, labels_paths):
+    """
+    Remove images and labels that are missing
+    Parameters
+    ----------
+    image_paths : The paths to the images in the dataset of shape (NUM_IMAGES, NUM_CHANNELS) of the form "Dataset001_ISLES22forUNET/imagesTr/ISLES_x_y.nii.gz"
+    labels_paths : The paths to the labels in the dataset of shape (NUM_IMAGES) of the form "Dataset001_ISLES22forUNET/labelsTr/ISLES_x.nii.gz"
+
+    Returns : The image and label paths with the missing images removed
+    -------
+
+    """
+    missing_images = [203]
+    missing_labels = [203]
+
+
+    labels_ids = []
+    image_ids = []
+
+    for i in range(len(labels_paths)):
+        labels_ids.append(labels_paths[i].split('_')[-1][:3])
+    for i in range(len(image_paths)):
+        image_ids.append(image_paths[i][0].split('_')[-2])
+
+    for i in range(len(image_paths)):
+        id = image_paths[i][0].split('_')[-2]
+        if id not in labels_ids:
+            missing_labels.append(i)
+
+
+    for i in range(len(labels_paths)):
+        id = labels_paths[i].split('_')[-1][:3]
+        if id not in image_ids:
+            missing_images.append(i)
+
+    image_paths = np.delete(image_paths, missing_labels, axis=0)
+    labels_paths = np.delete(labels_paths, missing_images, axis=0)
+
+    return image_paths, labels_paths
+
 
 class MRIImage(Dataset):
     def __init__(self, image_paths, labels_paths, transform=None, split_ratios=[0.8, 0.2, 0.1], mode = None , patch_size = (64, 64, 64),num_patches = 2):
@@ -29,14 +73,14 @@ class MRIImage(Dataset):
         images_list = np.array([os.path.join(image_paths, x) for x in os.listdir(image_paths)])
         labels_list = np.array([os.path.join(labels_paths, x) for x in os.listdir(labels_paths)])
 
+        self.labels_paths = np.sort(labels_list)
+        self.image_paths = np.sort(images_list).reshape(-1, 3)
 
-        num_channels = len(images_list) // len(labels_list)
-        num_training_imgs = len(images_list) // num_channels
+        self.image_paths, self.labels_paths = remove_missing(self.image_paths, self.labels_paths)
 
+        num_training_imgs = len(self.labels_paths)
         train_val_test = [int(x * num_training_imgs) for x in split_ratios]
 
-        self.labels_paths = np.sort(labels_list)
-        self.image_paths = np.sort(images_list).reshape(-1, num_channels)
         selected = np.arange(0, num_training_imgs)
         selected = shuffle(selected)
 
@@ -138,21 +182,17 @@ class MRIImage(Dataset):
                                  start_indices[2]:end_indices[2],
                                  ])
 
-        for i in range(len(channel_patch)):
-            if(channel_patch[i].shape != self.patch_size):
-                channel_patch[i] = TF.resize(channel_patch[i], size=self.patch_size)
+        channel_patch = tio.Resize(self.patch_size)(torch.stack(channel_patch))
 
         mask_patch = mask[0][
                      start_indices[0]:end_indices[0],
                      start_indices[1]:end_indices[1],
                      start_indices[2]:end_indices[2],
                      ]
-        if(mask_patch.shape != self.patch_size):
-            mask_patch = TF.resize(mask_patch, size=self.patch_size)
 
-        combined_patch = torch.stack(channel_patch)
+        mask_patch = tio.Resize(self.patch_size)(mask_patch.unsqueeze(0))[0]
 
-        return combined_patch, mask_patch
+        return channel_patch, mask_patch
 
 def normalize(image):
     """

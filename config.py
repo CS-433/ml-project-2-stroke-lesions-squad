@@ -5,11 +5,11 @@ import shutil
 import torch
 from tqdm import tqdm
 
-LEARNING_RATE = 5E-4
+LEARNING_RATE = 1E-3
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-TRAIN_BATCH_SIZE = 4
-VAL_BATCH_SIZE = 8444
+TRAIN_BATCH_SIZE = 8
+VAL_BATCH_SIZE = 8
 TEST_BATCH_SIZE = 8
 
 NUM_EPOCHS = 50
@@ -18,7 +18,7 @@ IMAGE_HEIGHT = 128
 IMAGE_WIDTH = 128
 IMAGE_DEPTH = 128
 PATCH_SIZE = (64,64,64)
-NUM_PATCHES = 2
+NUM_PATCHES = 4
 PIN_MEMORY = True
 LOAD_MODEL = False
 TRAIN_IMG_DIR = "Dataset001_ISLES22forUNET_Debug/imagesTr"

@@ -8,6 +8,7 @@ import torch
 from torch import optim
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+import torchio as tio
 
 from Model import UNET
 from loss import DiceBCELoss_2
@@ -63,3 +64,11 @@ def test_extract():
         with gzip.open(os.path.join(o_path, path[i]), 'rb') as f_in:
             with open(os.path.join(n_path, path[i][:-3]), 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
+
+def test_reshape():
+    img = torch.randn(3, 64, 64, 64)
+    shape = (64, 64, 64)
+
+    img2 = tio.Resize(shape)(img)
+
+    print(img - img2)

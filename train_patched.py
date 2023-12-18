@@ -56,19 +56,18 @@ def train_fn_patched(loader, model, optimizer, loss_fn, scaler):
     """
     model.train()
     loop = tqdm(loader)
-    batch_idx = 0
     avg_loss = 0.0
     batch_accuracy, batch_f1, batch_tp, batch_tn, batch_fp, batch_fn = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     number_iter = 0
+    total_loss = 0.0
     for data, targets in loop:
-        total_loss = 0.0
         
         data = data.to(device=DEVICE)
         targets = targets.float().to(device=DEVICE)
 
         # forward
         with torch.cuda.amp.autocast():
-            predictions = model(data)
+            predictions = model(data.float())
             loss = loss_fn(predictions, targets)
 
         if np.isnan(loss.item()):
@@ -84,8 +83,7 @@ def train_fn_patched(loader, model, optimizer, loss_fn, scaler):
         # update tqdm loop
         number_iter += 1
         total_loss += loss.item()
-        avg_loss = total_loss/number_iter
-        loop.set_postfix(loss=avg_loss)
+        loop.set_postfix(loss=total_loss / (number_iter + 1))
         accuracy, f1, tp, tn, fp, fn = train_metrics(predictions, targets)
         batch_accuracy += accuracy
         batch_f1 += f1
@@ -94,25 +92,23 @@ def train_fn_patched(loader, model, optimizer, loss_fn, scaler):
         batch_fp += fp
         batch_fn += fn
 
-    return avg_loss, batch_accuracy/number_iter, batch_f1/number_iter, batch_tp, batch_tn, batch_fp, batch_fn
+    return total_loss/number_iter, batch_accuracy/number_iter, batch_f1/number_iter, batch_tp, batch_tn, batch_fp, batch_fn
 
 
 def main(backup_rate = 5):
     #transform of a 3D image.
 
-    train_transform =  tio.Compose([
-        tio.RandomAffine(),
+    train_transform = tio.Compose([
+        tio.RandomAffine(p=0.3),
         tio.ToCanonical(),
-        #tio.Resample(4),
-        #tio.CropOrPad((128, 128, 128)),
-        tio.RandomAnisotropy(),
-        tio.Blur(std = 0.5, p = 0.25),
-        tio.RandomMotion(degrees = 15, translation = 5, p=0.3),
-        tio.RandomBiasField(p = 0.5),
-        tio.RandomFlip(p = 0.3),
-        tio.RandomElasticDeformation(max_displacement=10, p = 0.3),
-        tio.RandomSwap(p = 0.3),
-        #Normalization occurs later
+        tio.RandomAnisotropy(p=0.1),
+        tio.Blur(std=0.5, p=0.25),
+        #tio.RandomMotion(degrees=15, translation=5, p=0.3),
+        #tio.RandomBiasField(p=0.2),
+        tio.RandomFlip(p=0.3),
+        #tio.RandomElasticDeformation(max_displacement=10, p=0.05),
+        tio.RandomSwap(p=0.3),
+        # Normalization occurs later
     ])
     val_transform = tio.Compose([
         tio.ToCanonical(),
@@ -164,7 +160,14 @@ def main(backup_rate = 5):
     save_predictions_as_imgs(
         val_loader, model, PATCH_SIZE,"final", folder=CHECKPOINT_DIR, device=DEVICE
     )
-    check_accuracy(val_loader, model, device=DEVICE)
+    accuracy, f1, tp, tn, fp, fn = check_accuracy(val_loader, model, device=DEVICE)
+    metrics["val"]["f1"].append(f1)
+    metrics["val"]["accuracy"].append(accuracy)
+    metrics["val"]["tp"].append(tp)
+    metrics["val"]["tn"].append(tn)
+    metrics["val"]["fp"].append(fp)
+    metrics["val"]["fn"].append(fn)
+
     checkpoint = {
         "state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
