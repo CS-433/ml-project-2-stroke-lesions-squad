@@ -146,13 +146,14 @@ class DiceBCELoss_2(nn.Module):
         predicted = predicted.squeeze(1)
         pos_weight = (target == 0.).sum()/(target.sum()+1e-6)
 
+        sig_predicted = nn.Sigmoid()(predicted)
         # Calculate Dice Loss
-        dice_loss = 1 - dice_coefficient(predicted, target)
+        dice_loss = 1 - dice_coefficient(sig_predicted, target)
 
         # Calculate Binary Cross Entropy Loss
         bce_loss = nn.BCEWithLogitsLoss(pos_weight = torch.tensor([25.0]))(predicted, target)
 
         # Combine both losses
-        combined_loss = 0.5*dice_loss + 0.5*bce_loss
+        combined_loss = 0.75*dice_loss + 0.25*bce_loss
 
         return combined_loss
