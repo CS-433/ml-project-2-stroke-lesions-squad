@@ -1,7 +1,10 @@
+import nibabel
+import numpy as np
 import torch
 import torchvision
 from torch.utils.data import DataLoader
 import os
+import nibabel as nib
 CROP = [2,2,2]
 
 
@@ -90,18 +93,19 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
                 for k in range(0, y.shape[3], sz):
                     crop_x = x[:, :, i:i + sx, j:j + sy, k:k + sz]
                     crop_y = y[:, i:i + sx, j:j + sy, k:k + sz]
-                    binary_y = (crop_y > 0.5).long()
+                    binary_y = (crop_y > 0.5).float()
                     with torch.no_grad():
                         preds = torch.sigmoid(model(crop_x.float()))
-                        preds = (preds > 0.5).long()
-                    num_correct += (preds == binary_y).sum()
-                    num_pixels += torch.numel(preds)
+                        preds = (preds > 0.5).float()
 
                     f_tp, f_tn, f_fp, f_fn = bayesian(preds, binary_y)
                     tp += f_tp
                     tn += f_tn
                     fp += f_fp
                     fn += f_fn
+
+                    num_correct += tp + tn
+                    num_pixels += tp+ tn + fp + fn
 
 
     print(
@@ -128,6 +132,11 @@ def save_predictions_as_imgs(
     """
     model.eval()
     batch_idx = 0
+
+    subfolder = f"{folder}/epoch_{epoch}"
+    if not os.path.exists(subfolder):
+        os.mkdir(subfolder)
+
     for x, y in loader:
         x = x.to(device=device)
         y = y.to(device=device)
@@ -146,9 +155,9 @@ def save_predictions_as_imgs(
         for slice in range(0, full_pred.shape[0], full_pred.shape[0] // 4):
             pred_image = full_pred[slice]
             y_image = true_image[slice]
-            torchvision.utils.save_image(
-                pred_image, f"{folder}/epoch_{epoch}_pred_{batch_idx}_slice{slice}.png"
-            )
-            torchvision.utils.save_image(y_image, f"{folder}/epoch_{epoch}_y_{batch_idx}_slice{slice}.png")
+            torchvision.utils.save_image(pred_image, f"{subfolder}/pred_{batch_idx}_slice{slice}.png")
+            torchvision.utils.save_image(y_image, f"{subfolder}/y_{batch_idx}_slice{slice}.png")
+            nib.save(nib.nifti1.Nifti1Image(pred_image.cpu().numpy(), np.eye(4)), f"{subfolder}/pred_{batch_idx}_slice{slice}.nii.gz")
+            nib.save(nib.nifti1.Nifti1Image(y_image.cpu().numpy(), np.eye(4)), f"{subfolder}/y_{batch_idx}_slice{slice}.nii.gz")
         batch_idx += 1
     model.train()

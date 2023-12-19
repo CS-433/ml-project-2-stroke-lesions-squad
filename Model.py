@@ -8,7 +8,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torchvision.transforms.functional as TF
+import torchio as tio
 
 
 
@@ -85,12 +85,16 @@ class UNET(nn.Module):
             #concatenates the output from the upsampling layer with the output from the downsampling layer
             connection = connections[idx//2]
             if(img.shape != connection.shape):
-                connection = TF.resize(connection, size=img.shape[2:])
+                new_connection = torch.zeros((connection.shape[0], connection.shape[1], img.shape[2], img.shape[3], img.shape[4]))
+                for i in range(connection.shape[0]):
+                    new_connection[i] = tio.Resize(img.shape[2:])(connection[i].cpu())
+                connection = new_connection.cuda()
             #concatenat the image slices with the connection, along the channel axis
             img = torch.cat((img, connection), dim=1)
             #DoubleConv is the downsampling layer
             img = self.ups[idx+1](img)
 
         x = self.final_conv(img)
+
 
         return x

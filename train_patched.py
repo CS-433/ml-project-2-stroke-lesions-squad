@@ -103,7 +103,6 @@ def main(backup_rate = 5):
 
     train_transform = tio.Compose([
         tio.RandomAffine(p=0.3),
-        tio.ToCanonical(),
         tio.RandomAnisotropy(p=0.1),
         tio.Blur(std=0.5, p=0.25),
         #tio.RandomMotion(degrees=15, translation=5, p=0.3),
@@ -114,8 +113,7 @@ def main(backup_rate = 5):
         # Normalization occurs later
     ])
     val_transform = tio.Compose([
-        tio.ToCanonical(),
-        tio.CropOrPad((IMAGE_DEPTH, IMAGE_HEIGHT, IMAGE_WIDTH)),
+        tio.RandomFlip(p=0.3),
     ])
 
     #model definition
@@ -161,7 +159,7 @@ def main(backup_rate = 5):
             save_checkpoint(checkpoint, CHECKPOINT_DIR, epoch)
             
     save_predictions_as_imgs(
-        val_loader, model, PATCH_SIZE,"final", folder=CHECKPOINT_DIR, device=DEVICE
+        val_loader, model, PATCH_SIZE,"final", folder=SAVED_IMAGES_DIR, device=DEVICE
     )
     accuracy, f1, tp, tn, fp, fn = check_accuracy(val_loader, model, device=DEVICE)
     metrics["val"]["f1"].append(f1)
@@ -175,7 +173,7 @@ def main(backup_rate = 5):
         "state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
     }
-    save_checkpoint(checkpoint, "final_checkpoint")
+    save_checkpoint(checkpoint, CHECKPOINT_DIR, "final")
     return losses, metrics
 
 if __name__ == "__main__":
