@@ -8,6 +8,10 @@ Lesion segmentation in MRI plays a critical role in the early detection and char
 
 The goal of this project is to provide a toll that can effectively segmentate lesions and provide a confidence level along the prediction (uncertainty estimator not implemented yet).
 
+### Dataset
+
+We used a publicly available dataset for lesion segmentation. The data is available on the ISLES22 challenge 
+
 ### Dependencies
 
 The project is coded in Python 3 and Jupyter Notebook (full_train.ipynb is a ready-to-use notebook for training on Kaggle) using :
