@@ -10,7 +10,7 @@ The goal of this project is to provide a toll that can effectively segmentate le
 
 ### Dependencies
 
-The project is coded in Python 3 and Jupyter Notebook (ready-to-use notebook for training on Kaggle) using :
+The project is coded in Python 3 and Jupyter Notebook (full_train.ipynb is a ready-to-use notebook for training on Kaggle) using :
 - mainly pytorch (torch, torchvision, torchio, torchmetrics)
 - nibabel for Nifti MRI scans data handling
 
