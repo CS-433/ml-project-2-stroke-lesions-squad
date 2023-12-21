@@ -45,7 +45,7 @@ the function load_checkpoint can be used to load a pretrained model
 
 - Change the data paths (config.py and Run.py) and the hyperparameters (config.py)
 - run the Run.py file for training
-- Or load a pretrained model using the load_checkpoint function (utils.py) and directly use it for predictions
+- Or load a pretrained model using the load_checkpoint function (utils.py) and directly use it for predictions, The best pre-trained model we can give was obtained by running 300 epochs, using 50% of the dataset.
 
 
 
