@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision
 import os
-#from torchmetrics.classification import *
+from torchmetrics.classification import *
 from Loss import dice_coefficient
 import torch.nn.functional as F
 
@@ -64,19 +64,19 @@ def train_metrics(predictions, targets, device):
     """
     if predictions.shape != targets.shape:
         predictions = predictions.squeeze(1)
-    
-    predictions = nn.Sigmoid()(predictions)
-    predictions = (predictions > 0.5).long()
     targets = (targets > 0.5).long()
-    tp = torch.logical_and(predictions == 1, targets == 1).sum().item()
-    tn = torch.logical_and(predictions == 0, targets == 0).sum().item()
-    fp = torch.logical_and(predictions == 1, targets == 0).sum().item()
-    fn = torch.logical_and(predictions == 0, targets == 1).sum().item()
-    dice=dice_coefficient(predictions,targets).item()
+    predictions = (predictions > 0).long()
 
-    accuracy = (tp + tn) / (tp + tn + fp + fn)
-    f1 = 2 * tp / (2 * tp + fp + fn+ 1e-10)
-    return accuracy, f1, tp, tn, fp, fn, dice
+    accuracy = BinaryAccuracy().to(device)(predictions, targets).item()
+    conf_matrix = BinaryConfusionMatrix().to(device)(predictions, targets)
+    tp = conf_matrix[1][1]
+    tn = conf_matrix[0][0]
+    fp = conf_matrix[0][1]
+    fn = conf_matrix[1][0]
+    f1 = BinaryF1Score().to(device)(predictions, targets).item()
+
+    return accuracy, f1, tp, tn, fp, fn
+
 
 
 def check_accuracy(loader, model, crop_patch_size, device="cuda"):
@@ -97,7 +97,7 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
     num_pixels = 0
     model.eval()
 
-    tp, tn, fp, fn, f1, accuracy,dice = 0, 0, 0, 0, 0, 0,0
+    tp, tn, fp, fn, f1, accuracy = 0, 0, 0, 0, 0
     num_iter = 0
     for x, y in loader:
         y = y.to(device)
@@ -112,14 +112,14 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
                     with torch.no_grad():
                         preds = compute_prediction(crop_patch_size, crop_x, model)
 
-                    accuracy_t, f1_t, tp_t, tn_t, fp_t, fn_t,dice_t = train_metrics(preds, binary_y, device)
+                    accuracy_t, f1_t, tp_t, tn_t, fp_t, fn_t = train_metrics(preds, binary_y, device)
                     tp += tp_t
                     tn += tn_t
                     fp += fp_t
                     fn += fn_t
                     f1 += f1_t
                     accuracy += accuracy_t
-                    dice+= dice_t
+                    
 
                     num_iter += 1
 
@@ -131,7 +131,7 @@ def check_accuracy(loader, model, crop_patch_size, device="cuda"):
     print(f"Got average F1 score: {f1/num_iter:.4f}")
     model.train()
 
-    return accuracy/num_iter, f1/num_iter, tp, tn, fp, fn, dice/num_iter
+    return accuracy/num_iter, f1/num_iter, tp, tn, fp, fn 
 
 
 def compute_prediction(crop_patch_size, x, model):
