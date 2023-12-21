@@ -6,7 +6,7 @@ In this project we aim to build a precise lesion segmentation tool designed for 
 
 Lesion segmentation in MRI plays a critical role in the early detection and characterization of various medical conditions, including neurodegenerative diseases, tumors, and vascular abnormalities. The process of segmentation is manual and thus time-consuming and subject to variability between annotators. 
 
-The goal of this project is to provide a toll that can effectively segmentate lesions and provide a confidence level along the prediction (uncertainty estimator not implemented yet).
+The goal of this project is to provide a tool that can efficiently segmentate stroke lesions and provide a confidence level along with the prediction (a working uncertainty estimator has not been not implemented yet).
 
 ### Dataset
 
@@ -22,7 +22,7 @@ The project is coded in Python 3 and Jupyter Notebook (full_train.ipynb is a rea
 
 - config.py : here you can modify all the important hyperparameters and the different data paths
 
-- utils.py : file for for practical functions : computing the metrics, saving images, resizing and organizing the data loading
+- utils.py : file for practical functions (computing the metrics, saving images, resizing) and for organizing the data loading
 the function load_checkpoint can be used to load a pretrained model
 
 - Loss.py :  loss function used in the training, the default set for the combined loss is 0.25 dice score + 0.75 BCE
@@ -43,8 +43,8 @@ the function load_checkpoint can be used to load a pretrained model
 
 ### Executing program
 
-- Changing the data paths (config.py and Run.py) and the hyperparameters (config.py)
-- running the Run.py file for training
+- Change the data paths (config.py and Run.py) and the hyperparameters (config.py)
+- run the Run.py file for training
 - Or load a pretrained model using the load_checkpoint function (utils.py) and directly use it for predictions
 
 
