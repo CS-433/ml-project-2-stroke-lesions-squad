@@ -1,5 +1,5 @@
+\section{FILE ORGANIZATION}
 
-FILE ORGANIZATION
 config.py : here you can modify all the important hyperparameters and the different data paths
 utils.py : file for for practical functions : computing the metrics, saving images, resizing and organizing the data loading
 the function load_checkpoint can be used to load a pretrained model
