@@ -23,9 +23,17 @@ the function load_checkpoint can be used to load a pretrained model
 
 - Loss.py :  loss function used in the training, the default set for the combined loss is 0.25 dice score + 0.75 BCE
 
-- Dataset.py : Dataloader class (Explain how to organize the files)
+- Dataset.py : Dataloader class : made for Nifti data (3D data), we have 3 grayscale scans (FLAIR, DWI, ADC) per slice (thus the data treatment is similar to a 3D RGB image) for the 3 channel ibput of the model. The Nifti data files should be organized as the following : \
+      patient0_dwi_scan.nii \
+      patient0_adc_scan.nii  \
+      patient0_flair_scan.nii  \
+      patient1_dwi_scan.nii  \
+      patient1_adc_scan.nii  \
+      patient1_flair_scan.nii  \
+      ... \
+      
 
-- Main.py : training function, saving checkpoints, setting all the transformations for data augementation
+- Main.py : training function, saving checkpoints, setting all the transformations for data augmentation
 
 - Run.py : running the training and saving the metrics
 
